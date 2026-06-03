@@ -1,0 +1,1 @@
+worker: python xauusd_bot_final.py
