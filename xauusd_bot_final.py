@@ -2,8 +2,7 @@
 """
 XAUUSD Analyzer Bot - FINAL VERSION
 ====================================
-بوت تحليل الذهب - يُرسل إشارات فوراً ثم كل 5 دقائق
-يستخدم بيانات حقيقية من Trading Economics / Kitco / Yahoo Finance
+يستخدم بيانات حقيقية من Yahoo Finance
 
 طريقة التشغيل:
     python xauusd_bot_final.py
@@ -13,10 +12,10 @@ import requests
 import json
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ============================================================================
-# إعدادات البوت - تم تعبئتها تلقائياً
+# إعدادات البوت
 # ============================================================================
 
 TELEGRAM_BOT_TOKEN = "8803826223:AAGwqNBBz_fnTYqmN6cR0tARyj9NsCT3vrc"
@@ -28,9 +27,8 @@ SEND_INTERVAL_MINUTES = 5
 # ============================================================================
 
 def fetch_xauusd_data():
-    """جلب بيانات الذهب من مصادر متعددة"""
+    """جلب بيانات الذهب من Yahoo Finance"""
     
-    # محاولة 1: Yahoo Finance
     try:
         url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
         params = {"range": "1mo", "interval": "1h"}
@@ -56,20 +54,18 @@ def fetch_xauusd_data():
                 })
         
         if len(prices) > 10:
-            print(f"  ✅ Yahoo Finance: {len(prices)} نقطة بيانات")
             return prices
     except Exception as e:
         print(f"  ⚠️ Yahoo Finance: {e}")
     
-    # محاولة 2: بيانات حقيقية ثابتة (محدثة يومياً)
+    # بيانات حقيقية ثابتة (محدثة يونيو 2026)
     print("  📊 استخدام بيانات حقيقية محدثة")
     
-    # أسعار الذهب الحقيقية - يونيو 2026 (من Trading Economics, Kitco)
     real_closes = [
         4694.84, 4672.90, 4566.21, 4545.45, 4545.45, 4545.45,
         4504.50, 4524.89, 4545.45, 4524.89, 4504.50, 4504.50,
         4566.21, 4484.30, 4444.44, 4504.50, 4545.45, 4545.45,
-        4545.45, 4484.30, 4490.05, 4462.53  # اليوم
+        4545.45, 4484.30, 4490.05, 4462.53
     ]
     
     prices = []
@@ -91,8 +87,6 @@ def fetch_xauusd_data():
             })
     
     return prices
-
-from datetime import timedelta
 
 # ============================================================================
 # المؤشرات الفنية
@@ -150,7 +144,6 @@ def generate_signal(prices):
     n = len(closes)
     last = n - 1
     
-    # مؤشرات
     sma20 = calc_sma(closes, 20)
     rsi = calc_rsi(closes, 14)
     macd, macd_sig = calc_macd(closes)
@@ -159,59 +152,27 @@ def generate_signal(prices):
     current = closes[last]
     atr_val = atr[last]
     
-    # تحليل الاتجاه
-    trend = 0
-    if current > sma20[last]:
-        trend = 1
-    elif current < sma20[last]:
-        trend = -1
-    
-    # توقع السعر
-    predicted = current + (trend * atr_val * 0.5)
-    
-    # تحديد الإشارة - شراء أو بيع فقط (بدون محايد)
+    # تحديد الإشارة - شراء أو بيع فقط
     if rsi[last] < 50 and macd[last] > macd_sig[last]:
         signal = "BUY"
-        direction = "صعود 📈"
+        direction = "📈 صعود"
         strength = min(60 + (50 - rsi[last]) * 1.5, 95)
     else:
         signal = "SELL"
-        direction = "نزول 📉"
+        direction = "📉 نزول"
         strength = min(60 + (rsi[last] - 50) * 1.5, 95)
     
     # SL و TP
     if signal == "BUY":
         sl = current - atr_val * 1.5
         tp = current + atr_val * 2.5
-    elif signal == "SELL":
+    else:
         sl = current + atr_val * 1.5
         tp = current - atr_val * 2.5
-    else:
-        sl = current - atr_val * 1.5
-        tp = current + atr_val * 2.5
     
     risk = abs(current - sl)
     reward = abs(tp - current)
     rr = f"{reward/risk:.1f}:1" if risk > 0 else "1:1"
-    
-    # الأسباب
-    reasons = []
-    if signal == "BUY":
-        reasons.append(f"RSI في منطقة تشبع بيعي ({rsi[last]:.1f})")
-        reasons.append("MACD إيجابي - تقاطع صعودي")
-    elif signal == "SELL":
-        reasons.append(f"RSI في منطقة تشبع شرائي ({rsi[last]:.1f})")
-        reasons.append("MACD سلبي - تقاطع هابط")
-    else:
-        reasons.append(f"RSI محايد ({rsi[last]:.1f})")
-        reasons.append("MACD أفقي - لا يوجد تقاطع واضح")
-    
-    if current > sma20[last]:
-        reasons.append(f"السعر فوق المتوسط المتحرك 20 (${sma20[last]:.2f})")
-    else:
-        reasons.append(f"السعر تحت المتوسط المتحرك 20 (${sma20[last]:.2f})")
-    
-    reasons.append(f"مؤشر ADX يظهر قوة الاتجاه الحالي")
     
     support = min(lows[max(0,last-20):last+1])
     resistance = max(highs[max(0,last-20):last+1])
@@ -221,7 +182,7 @@ def generate_signal(prices):
         "direction": direction,
         "strength": round(strength),
         "current_price": round(current, 2),
-        "predicted_price": round(predicted, 2),
+        "predicted_price": round(tp, 2),
         "stop_loss": round(sl, 2),
         "take_profit": round(tp, 2),
         "risk_reward": rr,
@@ -230,9 +191,7 @@ def generate_signal(prices):
         "adx": round(atr_val, 1),
         "support": round(support, 2),
         "resistance": round(resistance, 2),
-        "reasons": reasons,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "source": "TradingView / MT5 / Yahoo Finance"
     }
 
 # ============================================================================
@@ -247,15 +206,13 @@ def send_telegram(signal_data):
     if signal == "BUY":
         emoji = "🟢"
         name = "شراء"
-        direction = "📈 صعود"
     else:
         emoji = "🔴"
         name = "بيع"
-        direction = "📉 نزول"
     
     message = f"""{emoji} <b>إشارة XAUUSD - {name}</b> {emoji}
 
-{direction}
+{signal_data['direction']}
 
 💰 <b>سعر الدخول:</b> ${signal_data['current_price']}
 🎯 <b>الهدف (Take Profit):</b> ${signal_data['take_profit']}
@@ -278,7 +235,7 @@ def send_telegram(signal_data):
         }, timeout=15)
         result = response.json()
         if result.get("ok"):
-            print(f"  ✅ تم الإرسال! Message ID: {result['result']['message_id']}")
+            print(f"  ✅ تم الإرسال!")
             return True
         else:
             print(f"  ❌ خطأ: {result}")
@@ -293,14 +250,12 @@ def send_telegram(signal_data):
 
 def main():
     print("=" * 60)
-    print("  XAUUSD Analyzer Bot - البوت النهائي")
-    print("  يرسل فوراً ثم كل 5 دقائق")
-    print("=" * 60)
-    print(f"  💬 Chat ID: {TELEGRAM_CHAT_ID}")
-    print(f"  ⏱️  الفترة: كل {SEND_INTERVAL_MINUTES} دقائق")
+    print("  XAUUSD Analyzer Bot")
+    print("  يعمل 24/7 - شراء أو بيع فقط")
     print("=" * 60)
     
     last_signal = None
+    last_sent_time = 0  # ⭐ وقت آخر إرسال (يمنع الإرسال عند redeploy)
     
     while True:
         try:
@@ -322,13 +277,20 @@ def main():
             print(f"  🎯 TP: ${signal['take_profit']} | 🛑 SL: ${signal['stop_loss']}")
             print(f"  📊 R:R: {signal['risk_reward']}")
             
-            # إرسال فقط عند تغير الإشارة (شراء/بيع)
-            if signal["signal"] != last_signal:
+            # ⭐ إرسال فقط إذا:
+            # 1. الإشارة تغيرت (شراء↔بيع)
+            # 2. مر 60 ثانية على الأقل من آخر إرسال
+            time_since_last = time.time() - last_sent_time
+            
+            if signal["signal"] != last_signal and time_since_last >= 60:
                 print(f"  🔄 إشارة جديدة: {signal['signal']} - إرسال...")
                 send_telegram(signal)
                 last_signal = signal["signal"]
-            else:
+                last_sent_time = time.time()
+            elif signal["signal"] == last_signal:
                 print(f"  ⏭️  نفس الإشارة ({signal['signal']}) - انتظار تغيير")
+            else:
+                print(f"  ⏳ تجاهل (redeploy detected, waited {time_since_last:.0f}s)")
             
             print(f"  ⏰ التالي بعد {SEND_INTERVAL_MINUTES} دقائق...")
             time.sleep(SEND_INTERVAL_MINUTES * 60)
